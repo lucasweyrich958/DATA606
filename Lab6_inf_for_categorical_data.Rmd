@@ -1,0 +1,322 @@
+---
+title: "Inference for categorical data"
+author: ''
+output:
+  pdf_document: default
+  html_document:
+    includes:
+      in_header: header.html
+    css: ./lab.css
+    highlight: pygments
+    theme: cerulean
+    toc: true
+    toc_float: true
+  word_document:
+    toc: true
+editor_options:
+  chunk_output_type: console
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(eval = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Getting Started
+
+### Load packages
+
+In this lab, we will explore and visualize the data using the **tidyverse** suite of 
+packages, and perform statistical inference using **infer**. The data can be found
+in the companion package for OpenIntro resources, **openintro**.
+
+Let's load the packages.
+
+```{r load-packages}
+library(tidyverse)
+library(openintro)
+library(infer)
+```
+
+
+### The data
+
+You will be analyzing the same dataset as in the previous lab, where you delved into a sample from the Youth Risk Behavior Surveillance System (YRBSS) survey, which uses data from high schoolers to help discover health patterns. The dataset is called `yrbss`.
+
+1.   What are the counts within each category for the amount of days these students have texted while driving within the past 30 days?
+
+```{r}
+unique(yrbss$text_while_driving_30d)
+```
+
+The counts are either 0, 1 - 2, 3 - 5, 6 - 9, 10 - 19, 20 - 29, 30, did not drive, and NA as in not answered.
+
+2.  What is the proportion of people who have texted while driving every day in the past 30 days and never wear helmets?
+
+```{r}
+text_drive_no_helmet = yrbss %>%
+  filter(helmet_12m == 'never') %>%
+  filter(text_while_driving_30d == '30')
+
+nrow(text_drive_no_helmet) / nrow(yrbss)
+```
+
+The proportion of respondents who never wear helmets and text and drive everyday is 3.4%.
+
+Remember that you can use `filter` to limit the dataset to just non-helmet wearers. Here, we will name the dataset `no_helmet`.
+
+```{r no helmet}
+data('yrbss', package='openintro')
+no_helmet <- yrbss %>%
+  filter(helmet_12m == "never")
+```
+
+Also, it may be easier to calculate the proportion if you create a new variable that specifies whether the individual has texted every day while driving over the past 30 days or not. We will call this variable `text_ind`.
+
+```{r indicator-texting}
+no_helmet <- no_helmet %>%
+  mutate(text_ind = ifelse(text_while_driving_30d == "30", "yes", "no"))
+```
+
+## Inference on proportions
+
+When summarizing the YRBSS, the Centers for Disease Control and Prevention seeks insight into the population *parameters*. To do this, you can answer the question, "What proportion of people in your sample reported that they have texted while driving each day for the past 30 days?" with a statistic; while the question "What proportion of people on earth have texted while driving each day for the past 30 days?" is answered with an estimate of the parameter.
+
+The inferential tools for estimating population proportion are analogous to those used for means in the last chapter: the confidence interval and the hypothesis test.
+
+```{r nohelmet-text-ci}
+no_helmet %>%
+  drop_na(text_ind) %>% # Drop missing values
+  specify(response = text_ind, success = "yes") %>%
+  generate(reps = 1000, type = "bootstrap") %>%
+  calculate(stat = "prop") %>%
+  get_ci(level = 0.95)
+```
+
+Note that since the goal is to construct an interval estimate for a proportion, it's necessary to both include the `success` argument within `specify`, which accounts for the proportion of non-helmet wearers than have consistently texted while driving the past 30 days, in this example, and that `stat` within `calculate` is here "prop", signaling that you are trying to do some sort of inference on a proportion.
+
+
+3.  What is the margin of error for the estimate of the proportion of non-helmet 
+    wearers that have texted while driving each day for the past 30 days based on 
+    this survey?
+
+```{r}
+no_helmet_text = no_helmet %>%
+  filter(text_while_driving_30d == 30)
+p = nrow(no_helmet_text)/nrow(no_helmet)
+2 * sqrt(p * (1 - p)/nrow(yrbss))
+```
+
+The margin of error is at 0.427%.
+
+4.  Using the `infer` package, calculate confidence intervals for two other 
+    categorical variables (you'll need to decide which level to call "success", 
+    and report the associated margins of error. Interpet the interval in context 
+    of the data. It may be helpful to create new data sets for each of the two 
+    countries first, and then use these data sets to construct the confidence intervals.
+```{r}
+females_text_and_drive = yrbss %>%
+  filter(gender == 'female') %>%
+  mutate(text_ind = ifelse(text_while_driving_30d == "30", "yes", "no"))
+
+females_text_and_drive %>%
+  drop_na(text_ind) %>%
+  specify(response = text_ind, success = "yes") %>%
+  generate(reps = 1000, type = "bootstrap") %>%
+  calculate(stat = "prop") %>%
+  get_ci(level = 0.95)
+
+tv_and_td = yrbss %>%
+  filter(hours_tv_per_school_day == '5+') %>%
+  mutate(text_ind = ifelse(text_while_driving_30d == "30", "yes", "no"))
+
+tv_and_td %>%
+  drop_na(text_ind) %>% # Drop missing values
+  specify(response = text_ind, success = "yes") %>%
+  generate(reps = 1000, type = "bootstrap") %>%
+  calculate(stat = "prop") %>%
+  get_ci(level = 0.95)
+```
+
+The 95% CIs for females that text and drive daily is 0.05 - 0.06 and the CIs for respondends that watch more than 5 hours of TV per school day and text and drive daily is 0.07 - 0.10.
+
+
+## How does the proportion affect the margin of error?
+
+Imagine you've set out to survey 1000 people on two questions: are you at least 6-feet tall? and are you left-handed? Since both of these sample proportions were calculated from the same sample size, they should have the same margin of error, right? Wrong! While the margin of error does change with sample size, it is also affected by the proportion.
+
+Think back to the formula for the standard error: $SE = \sqrt{p(1-p)/n}$. This is then used in the formula for the margin of error for a 95% confidence interval: 
+
+$$
+ME = 1.96\times SE = 1.96\times\sqrt{p(1-p)/n} \,.
+$$
+Since the population proportion $p$ is in this $ME$ formula, it should make sense that the margin of error is in some way dependent on the population proportion. We can visualize this relationship by creating a plot of $ME$ vs. $p$.
+
+Since sample size is irrelevant to this discussion, let's just set it to some value ($n = 1000$) and use this value in the following calculations:
+
+```{r n-for-me-plot}
+n <- 1000
+```
+
+The first step is to make a variable `p` that is a sequence from 0 to 1 with each number incremented by 0.01. You can then create a variable of the margin of error (`me`) associated with each of these values of `p` using the familiar approximate formula ($ME = 2 \times SE$).
+
+```{r p-me}
+p <- seq(from = 0, to = 1, by = 0.01)
+me <- 2 * sqrt(p * (1 - p)/n)
+```
+
+Lastly, you can plot the two variables against each other to reveal their relationship. To do so, we need to first put these variables in a data frame that you can call in the `ggplot` function.
+
+```{r me-plot}
+dd <- data.frame(p = p, me = me)
+ggplot(data = dd, aes(x = p, y = me)) + 
+  geom_line() +
+  labs(x = "Population Proportion", y = "Margin of Error")
+```
+
+5.  Describe the relationship between `p` and `me`. Include the margin of
+    error vs. population proportion plot you constructed in your answer. For
+    a given sample size, for which value of `p` is margin of error maximized?
+
+```{r}
+dd <- data.frame(p = p, me = me)
+ggplot(data = dd, aes(x = p, y = me)) + 
+  geom_line() +
+  labs(x = "Population Proportion", y = "Margin of Error")
+```
+
+As can be seen in the plot, the margin of error and the population proportion are intricately linked with an inverted u-shape. This means that the margin of error is maximized when the population proportion is 0.5, so 50/50. 
+
+## Success-failure condition
+
+We have emphasized that you must always check conditions before making inference. For inference on proportions, the sample proportion can be assumed to be nearly normal if it is based upon a random sample of independent observations and if both $np \geq 10$ and $n(1 - p) \geq 10$. This rule of thumb is easy enough to follow, but it makes you wonder: what's so special about the number 10?
+
+The short answer is: nothing. You could argue that you would be fine with 9 or that you really should be using 11. What is the "best" value for such a rule of thumb is, at least to some degree, arbitrary. However, when $np$ and $n(1-p)$ reaches 10 the sampling distribution is sufficiently normal to use confidence intervals and hypothesis tests that are based on that approximation.
+
+You can investigate the interplay between $n$ and $p$ and the shape of the sampling distribution by using simulations. Play around with the following app to investigate how the shape, center, and spread of the distribution of $\hat{p}$ changes as $n$ and $p$ changes.
+
+```{r sf-app, echo=FALSE, eval=FALSE}
+library(shiny)
+shinyApp(
+  ui = fluidPage(
+      numericInput("n", label = "Sample size:", value = 300),
+      
+      sliderInput("p", label = "Population proportion:",
+                  min = 0, max = 1, value = 0.1, step = 0.01),
+      
+      numericInput("x_min", label = "Min for x-axis:", value = 0, min = 0, max = 1),
+      numericInput("x_max", label = "Max for x-axis:", value = 1, min = 0, max = 1),
+    plotOutput('plotOutput')
+  ),
+  
+  server = function(input, output) { 
+    output$plotOutput = renderPlot({
+      pp <- data.frame(p_hat = rep(0, 5000))
+      for(i in 1:5000){
+        samp <- sample(c(TRUE, FALSE), input$n, replace = TRUE, 
+                       prob = c(input$p, 1 - input$p))
+        pp$p_hat[i] <- sum(samp == TRUE) / input$n
+      }
+      bw <- diff(range(pp$p_hat)) / 30
+      ggplot(data = pp, aes(x = p_hat)) +
+        geom_histogram(binwidth = bw) +
+        xlim(input$x_min, input$x_max) +
+        ggtitle(paste0("Distribution of p_hats, drawn from p = ", input$p, ", n = ", input$n))
+    })
+  },
+  
+  options = list(height = 500)
+)
+```
+
+6.  Describe the sampling distribution of sample proportions at $n = 300$ and 
+    $p = 0.1$. Be sure to note the center, spread, and shape.
+
+The distribution here contains a center at approximately 0.10 and it ranges from about 0.5 to 0.15. It seems to be normally distributed, although it has two pronounced peaks right around the center
+
+7.  Keep $n$ constant and change $p$. How does the shape, center, and spread 
+    of the sampling distribution vary as $p$ changes. You might want to adjust
+    min and max for the $x$-axis for a better view of the distribution.
+
+When changing just p, the shape of the distribution stays the same (i.,e normally distributed). It simply moves back and forth on the x axis, depending whether p is increased or decreased.
+
+8.  Now also change $n$. How does $n$ appear to affect the distribution of $\hat{p}$?
+
+If n is increased, it will become a more robust normal distribution while a smaller n will lead to less robust shapes. This is in line again with the central limit theorem.
+
+* * *
+
+## More Practice
+
+For some of the exercises below, you will conduct inference comparing two proportions. In such cases, you have a response variable that is categorical, and an explanatory variable that is also categorical, and you are comparing the proportions of success of the response variable across the levels of the explanatory variable. This means that when using `infer`, you need to include both variables within `specify`.
+
+9.  Is there convincing evidence that those who sleep 10+ hours per day are more
+    likely to strength train every day of the week? As always, write out the 
+    hypotheses for any tests you conduct and outline the status of the conditions
+    for inference. If you find a significant difference, also quantify this 
+    difference with a confidence interval. 
+
+```{r}
+no_sleepers = yrbss %>%
+  drop_na(school_night_hours_sleep) %>%
+  drop_na(strength_training_7d) %>%
+  filter(school_night_hours_sleep != "10+") %>%
+  mutate(daily_workout = ifelse(strength_training_7d == 7, "yes", "no")) %>%
+  select(school_night_hours_sleep, daily_workout)
+
+deep_sleepers = yrbss %>%
+  drop_na(school_night_hours_sleep) %>%
+  drop_na(strength_training_7d) %>%
+  filter(school_night_hours_sleep == "10+") %>%
+  mutate(daily_workout = ifelse(strength_training_7d == 7, "yes", "no")) %>%
+  select(school_night_hours_sleep, daily_workout)
+
+no_sleep_result = no_sleepers %>%
+  specify(response = daily_workout, success = "yes") %>%
+  generate(reps = 1000, type = "bootstrap") %>%
+  calculate(stat = "prop") %>%
+  get_ci(level = 0.95)
+deep_sleep_result = deep_sleepers %>%
+  specify(response = daily_workout, success = "yes") %>%
+  generate(reps = 1000, type = "bootstrap") %>%
+  calculate(stat = "prop") %>%
+  get_ci(level = 0.95)
+
+deepsleep_lci = deep_sleep_result$lower_ci
+deepsleep_uci = deep_sleep_result$upper_ci
+nosleep_lci = no_sleep_result$lower_ci
+nosleep_uci = no_sleep_result$upper_ci
+
+deepsleep_uci
+deepsleep_lci
+nosleep_uci
+nosleep_lci
+```
+I hypothesize that there is going to be a significant difference between both groups, which means that the CIs should not overlap by a stark amount. I hypothesize that respondents that sleep more than 10 hours per night will exercise more than those who do not. In order to test this, we can calculate the CIs for each group at a = 0.05 and compare them.
+
+The CI for the respondents not sleeping more than 10 hours per night is 0.16 - 0. 17, while the CI for respondents that do sleep 10+ hours per night is 0.22 - 0.32. This means that there is a significant difference between these two groups, as the CIs do not overlap at all. 
+
+10.  Let's say there has been no difference in likeliness to strength train every
+    day of the week for those who sleep 10+ hours. What is the probablity that
+    you could detect a change (at a significance level of 0.05) simply by chance?
+    *Hint:* Review the definition of the Type 1 error.
+
+The probability to detect such effect to be significant by chance only, with a significance level of 0.05, would be 5%, since if the null hypothesis is true, there is a 5% chance of observing a result as extreme as or more extreme than the one obtained.
+
+11.  Suppose you're hired by the local government to estimate the proportion of 
+    residents that attend a religious service on a weekly basis. According to 
+    the guidelines, the estimate must have a margin of error no greater than 
+    1% with 95% confidence. You have no idea what to expect for $p$. How many 
+    people would you have to sample to ensure that you are within the 
+    guidelines?\
+    *Hint:* Refer to your plot of the relationship between $p$ and margin of 
+    error. This question does not require using a dataset.
+
+```{r}
+n_govt = (1.96^2*0.85*0.15)/0.01^2
+n_govt
+```
+
+We can calculate how many respondents we can get by adjusting the formula for margin of error to find n. 
+The result shows we need at least 4898 respondents for the margin of error to be 1%. at a CI of 95%. 
+
+* * *

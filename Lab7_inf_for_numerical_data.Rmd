@@ -1,0 +1,246 @@
+---
+title: 'Inference for numerical data'
+author: ""
+output:
+  pdf_document: default
+  html_document:
+    includes:
+      in_header: header.html
+    css: ./lab.css
+    highlight: pygments
+    theme: cerulean
+    toc: true
+    toc_float: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(eval = TRUE, message = FALSE, warning = FALSE)
+```
+
+## Getting Started
+
+### Load packages
+
+In this lab, we will explore and visualize the data using the **tidyverse** suite of packages, and perform statistical inference using **infer**. The data can be found in the companion package for OpenIntro resources, **openintro**.
+
+Let's load the packages.
+
+```{r load-packages, message=FALSE}
+library(tidyverse)
+library(openintro)
+library(infer)
+```
+
+
+### The data
+
+Every two years, the Centers for Disease Control and Prevention conduct the Youth Risk Behavior Surveillance System (YRBSS) survey, where it takes data from high schoolers (9th through 12th grade), to analyze health patterns. You will work with a selected group of variables from a random sample of observations during one of the years the YRBSS was conducted.
+
+Load the `yrbss` data set into your workspace.
+
+```{r load-data}
+data('yrbss', package='openintro')
+```
+
+There are observations on 13 different variables, some categorical and some numerical. The meaning of each variable can be found by bringing up the help file:
+
+```{r help-nc, eval=FALSE}
+?yrbss
+```
+
+
+1.  What are the cases in this data set? How many cases are there in our sample?
+
+```{r}
+nrow(yrbss)
+```
+
+Given that there are 13583 means that there are also 13583 cases, or observations.
+
+Remember that you can answer this question by viewing the data in the data viewer or by using the following command:
+
+```{r str}
+glimpse(yrbss)
+```
+
+## Exploratory data analysis
+
+You will first start with analyzing the weight of the participants in kilograms: `weight`.
+
+Using visualization and summary statistics, describe the distribution of weights. The `summary` function can be useful.
+
+```{r summary}
+summary(yrbss$weight)
+```
+
+2.  How many observations are we missing weights from?
+
+The summary() command above shows that there are 1004 NA's, meaning we're missing 1004 responses
+
+Next, consider the possible relationship between a high schooler's weight and their physical activity. Plotting the data is a useful first step because it helps us quickly visualize trends, identify strong associations, and develop research questions.
+
+First, let's create a new variable `physical_3plus`, which will be coded as either "yes" if they are physically active for at least 3 days a week, and "no" if not.
+
+```{r create new var}
+yrbss <- yrbss %>% 
+  mutate(physical_3plus = ifelse(yrbss$physically_active_7d > 2, "yes", "no"))
+```
+
+
+3.  Make a side-by-side boxplot of `physical_3plus` and `weight`. Is there a relationship between these two variables? What did you expect and why?
+
+```{r}
+ggplot(data = yrbss, aes(physical_3plus, weight)) +
+  geom_boxplot()
+```
+
+It appears that there is a bit greater variability within group no than group yes, although it's not extremely apparent. However, this could mean that people that are more physically active will concentrate more on the healthy weight range (which is more in the middle of the spread and not very low either). However, it is interesting that NA is even more concentrated, but that may be because of the disproportionate group sizes.
+
+The box plots show how the medians of the two distributions compare, but we can also compare the means of the distributions using the following to first group the data by the `physical_3plus` variable, and then calculate the mean `weight` in these groups using the `mean` function while ignoring missing values by setting the `na.rm` argument to `TRUE`.
+
+```{r by-means}
+yrbss %>%
+  group_by(physical_3plus) %>%
+  summarise(mean_weight = mean(weight, na.rm = TRUE))
+```
+
+There is an observed difference, but is this difference statistically significant? In order to answer this question we will conduct a hypothesis test.
+
+## Inference
+
+4.  Are all conditions necessary for inference satisfied? Comment on each. You can compute the group sizes with the `summarize` command above by defining a new variable with the definition `n()`.
+
+```{r}
+yrbss %>%
+  group_by(physical_3plus) %>%
+  summarise(n())
+```
+Independence: yes, this condition is satisfied because the samples are independent responders
+Random: yes, this survey is a random sample
+Normally distributed: Yes the data is normally distributed
+
+
+5.  Write the hypotheses for testing if the average weights are different for those who exercise at least times a week and those who don't.
+
+"We hypothesize that the average weights of respondents that exercise at least three times a week are significantly lower than the average weights of respondents who do not."
+
+Next, we will introduce a new function, `hypothesize`, that falls into the `infer` workflow. You will use this method for conducting hypothesis tests. 
+
+But first, we need to initialize the test, which we will save as `obs_diff`.
+
+```{r inf-weight-habit-ht-initial, tidy=FALSE, warning = FALSE}
+obs_diff <- yrbss %>%
+  drop_na(physical_3plus) %>%
+  specify(weight ~ physical_3plus) %>%
+  calculate(stat = "diff in means", order = c("yes", "no"))
+```
+
+Notice how you can use the functions `specify` and `calculate` again like you did for calculating confidence intervals. Here, though, the statistic you are searching for is the difference in means, with the order being `yes - no != 0`.
+
+After you have initialized the test, you need to simulate the test on the null distribution, which we will save as `null`.
+
+```{r inf-weight-habit-ht-null, tidy=FALSE, warning = FALSE}
+null_dist <- yrbss %>%
+  drop_na(physical_3plus) %>%
+  specify(weight ~ physical_3plus) %>%
+  hypothesize(null = "independence") %>%
+  generate(reps = 1000, type = "permute") %>%
+  calculate(stat = "diff in means", order = c("yes", "no"))
+```
+
+Here, `hypothesize` is used to set the null hypothesis as a test for independence. In one sample cases, the `null` argument can be set to "point" to test a hypothesis relative to a point estimate.
+
+Also, note that the `type` argument within `generate` is set to `permute`, which is the argument when generating a null distribution for a hypothesis test.
+
+We can visualize this null distribution with the following code:
+
+```{r}
+ggplot(data = null_dist, aes(x = stat)) +
+  geom_histogram()
+```
+
+
+6. How many of these `null` permutations have a difference of at least `obs_stat`?
+
+```{r}
+sum(obs_diff$stat <= null_dist$stat)
+```
+
+It appears that there is no permutation that has a difference of at least obs_stat.
+
+Now that the test is initialized and the null distribution formed, you can calculate the p-value for your hypothesis test using the function `get_p_value`.
+
+```{r inf-weight-habit-ht-pvalue}
+null_dist %>%
+  get_p_value(obs_stat = obs_diff, direction = "two_sided")
+```
+
+This the standard workflow for performing hypothesis tests.
+
+7.  Construct and record a confidence interval for the difference between the weights of those who exercise at least three times a week and those who don't, and interpret this interval in context of the data.
+
+```{r}
+physical = yrbss[c('physical_3plus', 'weight')]
+t.test(weight ~ physical_3plus, physical, var.equal = T)
+```
+
+The 95% CI is -2.409 - -1.140, which means that there is a significant difference, because the CI does not include 0, which would have meant no difference, so our null hypothesis. This means that we can, firstly, reject the null hypothesis. Secondly, 95%  of the mean differences between groups of subsequent re-sampled tests will fall in the range of that confidence interval.
+
+## More Practice
+
+8.  Calculate a 95% confidence interval for the average height in meters (`height`) and interpret it in context.
+
+```{r}
+height = yrbss[c('height', 'physical_3plus')]
+height = height %>%
+  drop_na(height) %>%
+  drop_na(physical_3plus)
+t.test(yrbss$height)$conf.int
+```
+
+The 95% CI for height is 1.689 - 1.693, which means that 95% of means of subsequent re-sampled data from that population would fall in that range
+
+9.  Calculate a new confidence interval for the same parameter at the 90% confidence level. Comment on the width of this interval versus the one obtained in the previous exercise.
+
+```{r}
+t.test(yrbss$height, conf.level = 0.9)$conf.int
+```
+Using a 90% CI instead makes the range smaller, namely to 1.689 - 1.693. This increases the accuracy but at the cost of obtaining more false negatives.
+
+10.  Conduct a hypothesis test evaluating whether the average height is different for those who exercise at least three times a week and those who don't.
+
+```{r}
+t.test(height ~ physical_3plus, yrbss, var.equal = T)
+```
+
+The 95% CI for height, grouped by exercising more than three times or not is -0.042 - -0.034, which means that 95% of re-sampled mean differences will fall within that range. This mean difference is certainly smaller than the one for weight, which is unsurprising since exercise does not really influence height, but possibly the other way around (i.e., taller people like to exercise more, just speculation)
+
+11.  Now, a non-inference task: Determine the number of different options there are in the dataset for the `hours_tv_per_school_day` there are.
+
+```{r}
+yrbss %>%
+  distinct(hours_tv_per_school_day)
+```
+
+There are 7 options. do not watch, <1, 1, 2, 3, 4, 5+.
+
+12. Come up with a research question evaluating the relationship between height or weight and sleep. Formulate the question in a way that it can be answered using a hypothesis test and/or a confidence interval. Report the statistical results, and also provide an explanation in plain language. Be sure to check all assumptions, state your $\alpha$ level, and conclude in context.
+
+Given previous evidence that has connected obesity to lack of sleep, the current study aims to further increase the literature by investigating the link between weight and sleep in adolescents. Using a large normally distributed sample of randomly selected respondents (n = 13583) from the YRBSS dataset, we hypothesized that adolescents that sleep 8 or more hours will weigh significantly less compared to the ones that don't. In order to test this hypothesis, we will use a two-sample t-test ($\alpha$ = 0.05) to compare the means of both groups.
+
+```{r}
+sleep = yrbss %>%
+  mutate(sleep = ifelse(school_night_hours_sleep > 7, 'yes', 'no')) %>%
+  drop_na(sleep) %>%
+  drop_na(weight)
+t.test(weight ~ sleep, sleep, var.equal = T)
+sleep %>%
+  group_by(sleep) %>%
+  summarize(avg = mean(weight), sd = sd(weight))
+```
+
+Using a student's t-test, we found a significant between-group difference [t(11479) = 3.36, p = 0.0008]. Specifically, results showed that adolescents that sleep more than 8 hours on school nights (M = 67.0, SD = 16.4) weighed significantly less than adolescents that slept less than 8 hours on school nights (M = 68.2, SD = 17.2). This result confirms our hypothesis, which allows us to reject the null hypothesis. This is in line with previous literature that sleep is linked to heavier weight, which is now extended to adolescents.
+
+* * *
